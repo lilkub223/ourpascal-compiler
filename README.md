@@ -35,19 +35,20 @@ This project implements an end-to-end compiler with clear separation between com
 
 ## Repository Structure
 
-grammar/
-  OurPascal.jj        JavaCC grammar and compiler entry point
+    grammar/
+      OurPascal.jj        JavaCC grammar and compiler entry point
 
-src/
-  Statement.java     AST statement hierarchy
-  Variable.java      Variable representation
-  VarStore.java      Symbol table and scope handling
-  Type.java          Type system definitions
-  Value.java         Runtime value representation
-  Operation.java     High-level operations
-  VmOperation.java   VM-level instructions
-  PotentialInstruction.java
-  Direction.java
+    src/
+      Statement.java     AST statement hierarchy
+      Variable.java      Variable representation
+      VarStore.java      Symbol table and scope handling
+      Type.java          Type system definitions
+      Value.java         Runtime value representation
+      Operation.java     High-level operations
+      VmOperation.java   VM-level instructions
+      PotentialInstruction.java
+      Direction.java
+
 
 ---
 
@@ -56,13 +57,16 @@ src/
 Exact commands may vary depending on JavaCC configuration.
 
 1. Generate the parser and lexer:
-   javacc grammar/OurPascal.jj
+
+    javacc grammar/OurPascal.jj
 
 2. Compile the Java sources:
-   javac *.java src/*.java
+
+    javac *.java src/*.java
 
 3. Run the compiler:
-   java OurPascal <input-file>
+
+    java OurPascal <input-file>
 
 The compiler consumes a Pascal-like source program and produces a sequence of stack-based virtual-machine instructions.
 
