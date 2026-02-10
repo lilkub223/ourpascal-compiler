@@ -1,0 +1,547 @@
+/*-------------------------------------------------------------------------*
+ *---									---*
+ *---		ourPascal.jj						---*
+ *---									---*
+ *---	    This file defines a parser for the ourPascal Pascal		---*
+ *---	interpreter and compiler programs.				---*
+ *---									---*
+ *---	----	----	----	----	----	----	----	----	---*
+ *---									---*
+ *---	Version 1a		2025 May 31		Joseph Phillips	---*
+ *---									---*
+ *-------------------------------------------------------------------------*/
+
+options
+{
+  LOOKAHEAD		= 2;
+  FORCE_LA_CHECK	= true;
+}
+
+
+PARSER_BEGIN(OurPascal)
+
+import java.util.List;
+import java.util.LinkedList;
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileReader;
+import java.io.IOException;
+import java.io.PrintStream;
+
+public
+class	OurPascal
+{
+  //  0.  Public constants:
+  public static
+  final	String	OPTIMIZE_FLAG	= "-O";
+
+
+  //  I.  Public static interface:
+  //  PURPOSE:  To print how to use this program to 'stream'.  No return value.
+  public static
+  void		printUsage	(PrintStream	stream
+				)
+  {
+    stream.println("Usage:\tourPascal program.pas [" + OPTIMIZE_FLAG + "]\n");
+    stream.println("Where:\t" + OPTIMIZE_FLAG + " means to do optimizations\n");
+  }
+
+
+  //  PURPOSE:  To return 'true' if 'argStr' is a help flag, or 'false'
+  //	otherwise.
+  public static
+  boolean	isHelpFlag	(String	argStr
+				)
+  {
+    String[]	HELP_FLAG_STR_ARRAY	= {"-help",
+					   "--help",
+					   "-h",
+					   "-?"
+					  };
+
+    for  (int index = 0;  index < HELP_FLAG_STR_ARRAY.length;  index++)
+    {
+      if  ( argStr.equals(HELP_FLAG_STR_ARRAY[index]) )
+        return(true);
+    }
+
+    return(false);
+  }
+
+
+  //  PURPOSE:  To attempt to optimize 'instructList' at the level of a
+  //	 sequence of assembly language instructions.  No return value.
+  public static
+  void		optimize	(List<PotentialInstruction>	instructList
+  				)
+  {
+    //  I.  Application validity check:
+
+    //  II.  Optimize:
+   if(instructList==null|| instructList.isEmpty()){
+       return;
+
+   }
+   java.util.ListIterator<PotentialInstruction> itrtr =instructList.listIterator();
+   while(itrtr.hasNext()){
+     PotentialInstruction instruct=itrtr.next();
+     if(instruct instanceof VarVarPotentialInstruction){
+       VarVarPotentialInstruction varVar =(VarVarPotentialInstruction) instruct;
+       VmOperation oper=varVar.getOp();
+       if(oper==VmOperation.INT_COPY_VM_OP||oper==VmOperation.REAL_COPY_VM_OP||oper==VmOperation.IDEA_COPY_VM_OP){
+           Variable dest=varVar.getDest();
+           Variable src=varVar.getSrc0();
+           if(dest==src){
+               itrtr.remove();
+               continue;
+           }
+       }
+
+
+     }
+     if (instruct instanceof VarVarVarPotentialInstruction) {
+         VarVarVarPotentialInstruction triple = (VarVarVarPotentialInstruction) instruct;
+
+         VmOperation oper = triple.getOp();
+
+         boolean isAdd  = (oper == VmOperation.INT_ADD_VAR_VAR_VM_OP ||oper == VmOperation.REAL_ADD_VAR_VAR_VM_OP);
+
+         boolean isSub  = (oper == VmOperation.INT_SUB_VAR_VAR_VM_OP || oper == VmOperation.REAL_SUB_VAR_VAR_VM_OP);
+
+         if (isAdd || isSub) {
+             Variable dest = triple.getDest();
+             Variable src0 = triple.getSrc0();
+             Variable src1 = triple.getSrc1();
+
+             if (src1 == dest || src0 == dest) {
+
+                 itrtr.remove();
+                 continue;
+             }
+         }
+     }
+     }
+
+
+
+    //  III.  Finished:
+  }
+
+
+  //  PURPOSE:  To print the assembly language representation of '*nodePtr' to
+  //	to 'filePtr'.  No return value.
+  public static
+  void		toAssembly	(PrintStream			file,
+				 List<PotentialInstruction>	instructList
+				)
+  {
+    file.println("$beginPreAsm");
+    VarStore.get().toAssembly(file);
+
+    file.println("\n  %beginCode");
+
+    for  (PotentialInstruction instruct : instructList)
+    {
+      instruct.toText(file);
+    }
+  
+    file.println("  %endCode");
+    file.println("$endPreAsm");
+  }
+
+
+  //  PURPOSE:  To run the program with the command line arguments in 'args'.
+  public static
+  void		main		(String[]	args
+  				)
+				throws Exception
+  {
+    //  I.  Application validity check:
+    if  (args.length == 0)
+    {
+      printUsage(System.err);
+      return;
+    }
+
+    //  II.  Run program:
+    //  II.A.  Handle requests to show help:
+    for  (int index = 0;  index < args.length;  index++)
+    {
+      if  (isHelpFlag(args[index]))
+      {
+        printUsage(System.out);
+        return;
+      }
+    }
+
+    //  II.B.  Establish program arguments:
+    boolean	shouldOptimize	= ( (args.length >= 2)		&&
+				    args[1].equals(OPTIMIZE_FLAG)
+				  );
+    String	filePath	= args[0];
+
+    //  II.C.  Attempt to compile:
+    try
+    {
+      File		file	= new File(filePath);
+      FileReader	reader	= new FileReader(file);
+      OurPascal		pascal	= new OurPascal(reader);
+      Statement		node	= pascal.program();
+
+      if  (node != null)
+      {
+	List<PotentialInstruction>	list	= new LinkedList<>();
+
+	//  1.  Create list compile to list of VM instructions
+	node.check();
+	node.toAssembly(list);
+
+	//  2.  Optionally optimize:
+	if  (shouldOptimize)
+	{
+	  optimize(list);
+	}
+
+	//  3.  Output instructions:
+	toAssembly(System.out,list);
+      }
+    }
+    catch  (Exception error)
+    {
+      System.err.println(error);
+    }
+  }
+
+}
+
+PARSER_END(OurPascal)
+
+SKIP:  { " " | "\t" | "\n" | "\r"                    }
+TOKEN: { <PROGRAM: "program"| "Program"|"PROGRAM"> |
+	 <VAR: "var" | "Var" | "VAR"> |
+	 <BEGIN: "begin" | "Begin" | "BEGIN"> | 
+	 <END:   "end" | "End" | "END" > |
+	 "(" | ")" | ":=" |
+	 <IF: "if" | "If" | "IF" > |
+	 <THEN: "then" | "Then" | "THEN" > |
+	 <REPEAT: "repeat" | "Repeat" | "REPEAT" > |
+	 <UNTIL: "until" | "Until" | "UNTIL" > |
+	 <WHILE: "while" | "While" | "WHILE" > |
+	 <FOR:   "for" | "For" | "FOR" > |
+	 <DO:    "do" | "Do" | "DO" > |
+	 <TO:    "to" | "To" | "TO" > |
+	 <DOWNTO: "downto" | "Downto" | "DOWNTO" > |
+	 <WRITE: "WRITE" | "Write" | "write"> |
+	 <WRITELN: "WRITELN" | "Writeln" | "writeln" > |
+	 <ELSE:  "else" | "Else" | "ELSE" > |
+	 "," | ";" | ":" | "." |
+	 "=" | "<>" | "<" | "<=" | ">" | ">=" |
+       	 "+" | "-" |
+	 <OR: "or" | "Or" | "OR" > |
+       	 "*" | "/" |
+	 <DIV: "div" | "Div" | "DIV" > |
+	 <MOD: "mod" | "Mod" | "MOD" > |
+	 <AND: "and" | "And" | "AND" > |
+	 <BOOLEAN: "boolean" | "Boolean" | "BOOLEAN" > |
+	 <INTEGER: "integer" | "Integer" | "INTEGER" > |
+	 <REAL: "real" | "Real" | "REAL" > |
+	 <STRING: "string" | "String" | "STRING" > |
+	 <INTEGER_CONST: (["0"-"9"])+> |
+       	 <REAL_CONST: (["0"-"9"])*"."(["0"-"9"])+> |
+	 <FALSE: "false"|"False"|"FALSE"> |
+	 <TRUE: "true"|"True"|"TRUE"> |
+         <IDENTIFIER: ["a"-"z","A"-"Z","_"](["a"-"z","A"-"Z","_","0"-"9"])* > |
+	 <STRING_CONST: ("'" (~["'"])* "'")>
+       }
+
+Statement	program():
+{
+  Statement	node;
+}
+{
+  <PROGRAM> <IDENTIFIER> ";" optionalVarSection() node = block() "."
+  { return(node); }
+}
+
+void	optionalVarSection():
+{
+}
+{
+  <VAR> varDefineList()
+|
+  { }
+}
+
+void	varDefineList():
+{
+}
+{
+   varDefine() varDefineList()
+|
+  { }
+}
+
+void	varDefine():
+{
+  Token		token	= null;
+  Type		type	= Type.NONE;
+}
+{
+  token = <IDENTIFIER> ":"
+  ( <BOOLEAN> { type = Type.BOOLEAN; }	|
+    <INTEGER> { type = Type.INTEGER; }	|
+    <REAL>    { type = Type.REAL; }  	|
+    <STRING>  { type = Type.STRING; }
+  )
+  ";"
+  {
+    VarStore.get().declare(new Variable(token.image),type);
+  }
+}
+
+
+Statement	block	():
+{
+  Statement	list;
+}
+{
+  <BEGIN>
+  ( <END>
+    { return(new BlockStatement()); }
+    |
+    list = statementList() (";")? <END>
+    { return(list); }
+  )
+}
+
+
+BlockStatement	statementList	():
+{
+  Statement		instruct;
+  BlockStatement	list	= new BlockStatement();
+}
+{
+  instruct = statement() { list.append(instruct); }
+  ( ";" instruct = statementList() { list.append(instruct); } )*
+  { return(list); }
+}
+
+
+Statement	statement()
+		throws RuntimeException:
+{
+  Token		varToken;
+  Statement	expr;
+  Statement	cond;
+  Statement	start;
+  Statement	end;
+  Statement	body;
+  Statement	elseBody	= null;
+  BlockStatement outerB;
+  BlockStatement loopB;
+  Variable loopV;
+  Statement condExpression;
+  Statement incr;
+}
+
+{
+  varToken = <IDENTIFIER> ":=" expr = expression()
+  { return(new AssignStatement
+			(VarStore.get().findExisting(varToken.image),
+			 expr
+			)
+	  );
+  }
+  |
+  <IF> cond = expression() <THEN> body = statement()
+  ( <ELSE> elseBody = statement())?
+  { return(new IfStatement(cond,body,elseBody)); }
+  |
+  <WHILE> cond = expression() <DO> body = statement()
+  {
+    if  (cond.getType() != Type.BOOLEAN)
+        throw new IllegalArgumentException
+			("While-Do condition must be a boolean");
+
+    return(new WhileStatement(cond,body));
+  }
+  |
+  <REPEAT> body = statementList() (";")? <UNTIL> cond = expression()
+  {
+   if(cond.getType()!=Type.BOOLEAN){
+   throw new IllegalArgumentException("Repeat-Until must be a boolean");
+   }
+   outerB=new BlockStatement();
+   outerB.append(body);
+   outerB.append(new WhileStatement(new UnaryOpStatement(Operation.NOT,cond),body.copy()));
+   return outerB;
+  }
+  |
+<FOR> varToken = <IDENTIFIER> ":=" start = expression()
+  (
+    <TO> end = expression() <DO> body = statement()
+    {
+       loopV=VarStore.get().findExisting(varToken.image);
+
+       if(loopV.getType()!=Type.INTEGER){
+       throw new IllegalArgumentException("the for loop must be an integer");
+       }
+       if(start.getType()!=Type.INTEGER){
+           throw new IllegalArgumentException("loop's first expression must be an integer");
+           }
+       if(end.getType()!=Type.INTEGER){
+       throw new IllegalArgumentException("loop's last expression must be an integer");
+       }
+
+       AssignStatement firstAssignment=new AssignStatement(loopV,start);
+
+       condExpression=new BinaryOpStatement(Operation.LESSER_EQUALS,new VariableStatement(loopV),end);
+
+       incr=new AssignStatement(loopV,new BinaryOpStatement(Operation.PLUS,new VariableStatement(loopV), new ConstantStatement(1L)));
+       loopB=new BlockStatement();
+       loopB.append(body);
+       loopB.append(incr);
+       outerB=new BlockStatement();
+       outerB.append(firstAssignment);
+       outerB.append(new WhileStatement(condExpression,loopB));
+       return outerB;
+
+
+    }
+    |
+    <DOWNTO> end = expression() <DO> body = statement()
+    {
+        loopV=VarStore.get().findExisting(varToken.image);
+        if(loopV.getType()!=Type.INTEGER){
+        throw new IllegalArgumentException("for loop var must be an integer");
+
+        }
+        if(start.getType()!=Type.INTEGER){
+                   throw new IllegalArgumentException("loop's first expression must be an integer");
+                   }
+        if(end.getType()!=Type.INTEGER){
+               throw new IllegalArgumentException("loop's last expression must be an integer");
+               }
+        AssignStatement firstAssignment=new AssignStatement(loopV,start);
+        condExpression=new BinaryOpStatement(Operation.GREATER_EQUALS,new VariableStatement(loopV),end);
+
+        incr=new AssignStatement(loopV,new BinaryOpStatement(Operation.MINUS,new VariableStatement(loopV), new ConstantStatement(1L)));
+        loopB=new BlockStatement();
+        loopB.append(body);
+        loopB.append(incr);
+        outerB=new BlockStatement();
+        outerB.append(firstAssignment);
+        outerB.append(new WhileStatement(condExpression,loopB));
+        return outerB;
+
+
+
+
+    }
+  )
+  { return (null); }
+  |
+  <BEGIN> body = statementList() <END>
+  { return(body); }
+  |
+  <WRITE> "(" expr = expression() ")"
+  { return(new PrintStatement(false,expr)); }
+  |
+  <WRITELN> "(" expr = expression() ")"
+  { return(new PrintStatement(true,expr)); }
+}
+
+
+Statement	expression ():
+{
+  Statement	lhs;
+  Statement	rhs	= null;
+  Operation	op;
+}
+{
+  lhs = term()
+   ("="  rhs=term() {return(new BinaryOpStatement(Operation.EQUALS,lhs,rhs));}|
+    "<>" rhs=term() {return(new BinaryOpStatement(Operation.NOT_EQUALS,lhs,rhs));} |
+    "<"  rhs=term() {return(new BinaryOpStatement(Operation.LESSER,lhs,rhs));}|
+    "<=" rhs=term() {return(new BinaryOpStatement(Operation.LESSER_EQUALS,lhs,rhs));}|
+    ">"  rhs=term() {return(new BinaryOpStatement(Operation.GREATER,lhs,rhs));}|
+    ">=" rhs=term() {return(new BinaryOpStatement(Operation.GREATER_EQUALS,lhs,rhs));}|
+    { return(lhs); }
+   )
+}
+
+Statement	term() :
+{
+  Statement	lhs;
+  Statement	rhs;
+}
+{
+  lhs	= factor()
+  ( "+" rhs = term()
+    { lhs = new BinaryOpStatement(Operation.PLUS,lhs,rhs); }
+    |
+    "-" rhs = term()
+    { lhs = new BinaryOpStatement(Operation.MINUS,lhs,rhs); }
+    |
+    <OR> rhs = term()
+    { lhs = new BinaryOpStatement(Operation.OR,lhs,rhs); }
+  )*
+  { return(lhs); }
+}
+
+Statement	factor ():
+{
+  Statement	lhs;
+  Statement	rhs;
+}
+{
+  lhs	= unary()
+  (
+    "*" rhs = factor()
+    { lhs = new BinaryOpStatement(Operation.STAR,lhs,rhs); }
+    |
+    "/" rhs = factor()
+    { lhs = new BinaryOpStatement(Operation.SLASH,lhs,rhs); }
+    |
+    <DIV> rhs = factor()
+    { lhs = new BinaryOpStatement(Operation.DIV,lhs,rhs); }
+    |
+    <MOD> rhs = factor()
+    { lhs = new BinaryOpStatement(Operation.MOD,lhs,rhs); }
+    |
+    <AND> rhs = factor()
+    { lhs = new BinaryOpStatement(Operation.AND,lhs,rhs); }
+  )*
+  { return(lhs); }
+}
+
+
+Statement	unary ():
+{
+  Token		token;
+  long		integer;
+  double	real;
+  Statement	node;
+}
+{
+  "(" node = expression() ")"
+  { return(node); }
+  |
+  token = <IDENTIFIER>
+  { return(new VariableStatement(VarStore.get().findExisting(token.image))); }
+  |
+  token = <FALSE>
+  { return(new ConstantStatement(false)); }
+  |
+  token = <TRUE>
+  { return(new ConstantStatement(true)); }
+  |
+  token = <INTEGER_CONST>
+  { return(new ConstantStatement(Long.parseLong(token.image))); }
+  |
+  token = <REAL_CONST>
+  { return(new ConstantStatement(Double.parseDouble(token.image))); }
+  |
+  token = <STRING_CONST>
+  { return(new ConstantStatement(token.image.substring(1,token.image.length()-1))); }
+}
