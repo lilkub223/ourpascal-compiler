@@ -16,6 +16,3 @@ out/
 *.ear
 hs_err_pid*
 
-# JavaCC generated (keep if you commit generated sources; otherwise ignore the generated dir)
-# If JavaCC outputs into src/generated, uncomment:
-# src/generated/
